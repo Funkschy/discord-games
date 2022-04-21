@@ -7,11 +7,13 @@
    [discord-games.state :refer [create-game! create-reactable-message!
                                 has-running-game? message-game quit-game!
                                 running-game update-game!]]
-   [discord-games.wordle :as wordle])
+   [discord-games.wordle :as wordle]
+   [discord-games.config :refer [config]])
   (:import
    [java.io File]))
 
-(def command-prefix "$")
+(def command-prefix (get-in config [:commands :prefix]))
+(def img-channel (get-in config [:discord-constants :img-channel]))
 
 (defn command-name [msg-content]
   (when (str/starts-with? msg-content command-prefix)
@@ -36,8 +38,6 @@
 
 (defn- game-image-file [username]
   (File/createTempFile (str username "_game") ".png"))
-
-(def img-channel 964619087332401244)
 
 ;; --- wordle ---
 
@@ -92,10 +92,8 @@
                      :embed embed)))
 
 (defn- init-reactions! [messaging channel-id author {id :id :as message}]
-  (m/create-reaction! messaging channel-id id "⬅")
-  (m/create-reaction! messaging channel-id id "➡")
-  (m/create-reaction! messaging channel-id id "⬆")
-  (m/create-reaction! messaging channel-id id "⬇")
+  (doseq [emote (keys (get-in config [:discord-constants :arrow-emotes]))]
+    (m/create-reaction! messaging channel-id id emote))
   (create-reactable-message! author id :2048)
   message)
 
@@ -119,11 +117,7 @@
       (start-2048-game! messaging author channel-id dir))))
 
 (defmethod react! :2048 [{:keys [messaging]} {:keys [author channel-id]} emote message-id]
-  (let [dirs {"⬅" "left"
-              "➡" "right"
-              "⬆"  "up"
-              "⬇" "down"}
-        dir (dirs emote)]
+  (let [dir (get-in config [:discord-constants :arrow-emotes emote])]
     (when dir
       (update-2048-game! messaging author channel-id dir)
       (m/delete-user-reaction! messaging

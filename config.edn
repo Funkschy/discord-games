@@ -1,0 +1,10 @@
+{:log {}
+ :commands
+ {:prefix "$"}
+ :discord-constants
+ {:img-channel 964619087332401244
+  :arrow-emotes
+  {"⬅" "left"
+   "➡" "right"
+   "⬆"  "up"
+   "⬇" "down"}}}

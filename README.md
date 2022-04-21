@@ -7,11 +7,12 @@ It currently supports the following games:
 
 ## Usage
 
-There is currently still some hardcoded logic for my server, which you would need to change in order to run this bot yourself. The most important is the `img-channel` in commands.clj
+To use the bot yourself, you'll need to set a channel for the bot to send its images to.
+This is defined by the `:img-channel` value in the config.edn
 
 The bot expects your discord oauth token as an environment variable with the name `DISCORD_GAMES_TOKEN`, so if your token is `asdf` you can just run the bot with `DISCORD_GAMES_TOKEN="asdf" lein run`
 
-The prefix for commands is currently hardcoded to be `$` inside the commands.clj file
+The prefix for commands can be changed in the config.edn, it's `$` by default
 
 ## Commands
 
