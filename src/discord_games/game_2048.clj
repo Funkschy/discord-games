@@ -65,7 +65,7 @@
 
 (defrecord Game2048 [board]
   TextTileGame
-  (draw-game! [game g w h]
+  (draw-game! [_ g w h]
     (let [text-color "#d7dadc"
           tile-size  (/ w 4)
           bg-color   "#3a3a3c"]

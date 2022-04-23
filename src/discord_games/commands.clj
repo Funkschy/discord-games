@@ -2,18 +2,36 @@
   (:require
    [clojure.string :as str]
    [discljord.messaging :as m]
+   [discord-games.config :refer [config]]
    [discord-games.game-2048 :as g2048]
    [discord-games.render :as r]
    [discord-games.state :refer [create-game! create-reactable-message!
                                 has-running-game? message-game quit-game!
-                                running-game update-game!]]
-   [discord-games.wordle :as wordle]
-   [discord-games.config :refer [config]])
+                                running-game update-game-state!]]
+   [discord-games.wordle :as wordle])
   (:import
+   [discord_games.game_2048 Game2048]
+   [discord_games.wordle Wordle]
    [java.io File]))
 
 (def command-prefix (get-in config [:commands :prefix]))
 (def img-channel (get-in config [:discord-constants :img-channel]))
+
+(defprotocol Game
+  (update-state [game input])
+  (status-text  [game]))
+
+(extend-protocol Game
+  Wordle
+  (update-state [game guess]
+    (wordle/make-guess game guess))
+  (status-text [game]
+    (wordle/status-text game))
+  Game2048
+  (update-state [game direction]
+    (g2048/move game direction))
+  (status-text [game]
+    (g2048/status-text game)))
 
 (defn command-name [msg-content]
   (when (str/starts-with? msg-content command-prefix)
@@ -39,8 +57,6 @@
 (defn- game-image-file [username]
   (File/createTempFile (str username "_game") ".png"))
 
-;; --- wordle ---
-
 (defn- get-img-embed [messaging game file]
   (r/render-to-file! game file)
   (let [msg (m/create-message! messaging img-channel :attachments [file])
@@ -49,49 +65,47 @@
      "type"  "image"
      "image" {"url" url}}))
 
-(defn- update-wordle-game! [messaging author channel-id guess]
-  (let [{:keys [game file message]} (running-game author :wordle)
-        updated (wordle/make-guess game guess)
+(defn- update-game! [game-tag messaging author channel-id input]
+  (let [{:keys [game file message]} (running-game author game-tag)
+        updated (update-state game input)
         embed   (get-img-embed messaging updated file)]
-    (update-game! author :wordle assoc :game updated)
+    (update-game-state! author game-tag assoc :game updated)
     (m/edit-message! messaging
                      channel-id
                      message
-                     :content (wordle/status-text updated)
+                     :content (status-text updated)
                      :embed embed)))
 
-(defn- start-wordle-game! [messaging author channel-id guess]
-  (let [init-game (wordle/make-guess (wordle/new-game) guess)
-        file      (game-image-file author)
-        embed     (get-img-embed messaging init-game file)]
-    (create-game! author :wordle {:game init-game :file file})
+(defn- start-game! [game-tag messaging author channel-id init-game map-msg]
+  (let [file  (game-image-file author)
+        embed (get-img-embed messaging init-game file)]
+    (create-game! author game-tag {:game init-game :file file})
     (->> @(m/create-message! messaging
                              channel-id
-                             :content (wordle/status-text init-game)
+                             :content (status-text init-game)
                              :embed embed)
+         (map-msg)
          (:id)
-         (update-game! author :wordle assoc :message))))
+         (update-game-state! author game-tag assoc :message))))
+
+(defn- start-or-update! [game-tag messaging author channel-id msg-content start-fn]
+  (let [input (command-arg-text msg-content)]
+    (if (has-running-game? author game-tag)
+      (update-game! game-tag messaging author channel-id input)
+      (start-fn messaging author channel-id input))))
+
+;; --- wordle ---
+
+(defn- start-wordle-game! [messaging author channel-id guess]
+  (let [init-game (wordle/make-guess (wordle/new-game) guess)]
+    (start-game! :wordle messaging author channel-id init-game identity)))
 
 (defmethod execute! "wordle" [{:keys [messaging]} {:keys [author channel-id]} msg-content]
-  (let [guess (command-arg-text msg-content)]
-    (if (has-running-game? author :wordle)
-      (update-wordle-game! messaging author channel-id guess)
-      (start-wordle-game! messaging author channel-id guess))))
+  (start-or-update! :wordle messaging author channel-id msg-content start-wordle-game!))
 
 ;; --- 2048 ---
 
-(defn- update-2048-game! [messaging author channel-id dir]
-  (let [{:keys [game file message]} (running-game author :2048)
-        updated (g2048/move game dir)
-        embed   (get-img-embed messaging updated file)]
-    (update-game! author :2048 assoc :game updated)
-    (m/edit-message! messaging
-                     channel-id
-                     message
-                     :content (g2048/status-text updated)
-                     :embed embed)))
-
-(defn- init-reactions! [messaging channel-id author {id :id :as message}]
+(defn- init-2048-reactions! [messaging channel-id author {id :id :as message}]
   (doseq [emote (keys (get-in config [:discord-constants :arrow-emotes]))]
     (m/create-reaction! messaging channel-id id emote))
   (create-reactable-message! author id :2048)
@@ -99,32 +113,16 @@
 
 (defn- start-2048-game! [messaging author channel-id _]
   (let [init-game (g2048/new-game)
-        file      (game-image-file author)
-        embed     (get-img-embed messaging init-game file)]
-    (create-game! author :2048 {:game init-game :file file})
-    (->> @(m/create-message! messaging
-                             channel-id
-                             :content (g2048/status-text init-game)
-                             :embed embed)
-         (init-reactions! messaging channel-id author)
-         (:id)
-         (update-game! author :2048 assoc :message))))
+        map-msg   (partial init-2048-reactions! messaging channel-id author)]
+    (start-game! :2048 messaging author channel-id init-game map-msg)))
 
 (defmethod execute! "2048" [{:keys [messaging]} {:keys [author channel-id]} msg-content]
-  (let [dir (command-arg-text msg-content)]
-    (if (has-running-game? author :2048)
-      (update-2048-game! messaging author channel-id dir)
-      (start-2048-game! messaging author channel-id dir))))
+  (start-or-update! :2048 messaging author channel-id msg-content start-2048-game!))
 
 (defmethod react! :2048 [{:keys [messaging]} {:keys [author channel-id]} emote message-id]
-  (let [dir (get-in config [:discord-constants :arrow-emotes emote])]
-    (when dir
-      (update-2048-game! messaging author channel-id dir)
-      (m/delete-user-reaction! messaging
-                               channel-id
-                               message-id
-                               emote
-                               author))))
+  (when-let [dir (get-in config [:discord-constants :arrow-emotes emote])]
+    (update-game! :2048 messaging author channel-id dir)
+    (m/delete-user-reaction! messaging channel-id message-id emote author)))
 
 ;; --- general ---
 

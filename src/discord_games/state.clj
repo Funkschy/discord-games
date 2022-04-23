@@ -22,5 +22,5 @@
 (defn quit-game! [user game]
   (swap! running-games update user #(dissoc % game)))
 
-(defn update-game! [user game f & args]
+(defn update-game-state! [user game f & args]
   (apply swap! running-games update-in [user game] f args))

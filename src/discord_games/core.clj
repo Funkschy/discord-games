@@ -30,9 +30,10 @@
 
 (defmethod handle-event :message-reaction-add
   [_ {:keys [message-id channel-id] :as event-data} state]
-  (let [user-id (get-in event-data [:member :user :id])
+  (let [{:keys [id bot]} (get-in event-data [:member :user])
         emote   (get-in event-data [:emoji :name])]
-    (react! state {:author user-id :channel-id channel-id} emote message-id)))
+    (when-not bot
+      (react! state {:author id :channel-id channel-id} emote message-id))))
 
 (defn -main  []
   (let [event-ch (a/chan 100)
