@@ -59,6 +59,11 @@
       (assoc :status :error)
       (assoc :message message)))
 
+(defn- ok [game-state]
+  (if (= (:status game-state) :error)
+    (dissoc game-state :status :message)
+    game-state))
+
 ;; --- API ---
 
 (def tile-size 128)
@@ -112,7 +117,7 @@
     (cond
       (nil? direction) (error game-state (str "Invalid direction: " direction-str))
       (not (valid-move? game-state direction)) (error game-state "Invalid move")
-      :else (make-move game-state direction))))
+      :else (ok (make-move game-state direction)))))
 
 (defn new-game []
   (spawn-random (Game2048. (vec (repeat 16 0)))))
