@@ -64,6 +64,16 @@
     (dissoc game-state :status :message)
     game-state))
 
+(defn- log2 [x]
+  (int (/ (Math/log x) (Math/log 2))))
+
+(def color-scheme ["#eb9661" "#de9f47" "#b55945" "#819447" "#44702d" "#2f4d2f" "#6c81a1" "#405273" "#14233a"])
+
+(defn- bg-color [value]
+  (if (zero? value)
+    "#3a3a3c"
+    (color-scheme (dec (min (log2 value) (count color-scheme))))))
+
 ;; --- API ---
 
 (def tile-size 128)
@@ -72,8 +82,7 @@
   TextTileGame
   (draw-game! [_ g w h]
     (let [text-color "#d7dadc"
-          tile-size  (/ w 4)
-          bg-color   "#3a3a3c"]
+          tile-size  (/ w 4)]
       (assert (= w h) "invalid image size")
       (loop [[line & tail] (partition 4 board), y 0]
         (doseq [[offset value] (map vector (range) line)]
@@ -84,7 +93,7 @@
                       tile-size
                       (str value)
                       text-color
-                      bg-color))
+                      (bg-color value)))
         (when tail
           (recur tail (long (+ y tile-size)))))))
 
