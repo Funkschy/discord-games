@@ -54,39 +54,42 @@
   (fn [state context emote message-id]
     (message-game (:author context) message-id)))
 
-(defn- game-image-file [username]
+(defn- ^File game-image-file [username]
   (File/createTempFile (str username "_game") ".png"))
+
+(def ^:private img-embed {"title" "Game"
+                          "type"  "image"
+                          "image" {"url" ""}})
 
 (defn- get-img-embed [messaging game file]
   (r/render-to-file! game file)
   (let [msg (m/create-message! messaging img-channel :attachments [file])
         url (get-in @msg [:attachments 0 :url])]
-    {"title" "Game"
-     "type"  "image"
-     "image" {"url" url}}))
+    (assoc-in img-embed ["image" "url"] url)))
 
 (defn- update-game! [game-tag messaging author channel-id input]
-  (let [{:keys [game file message]} (running-game author game-tag)
+  (let [{:keys [game message-id file-path]} (running-game author game-tag)
+        file    (File. ^String file-path)
         updated (update-state game input)
         embed   (get-img-embed messaging updated file)]
     (update-game-state! author game-tag assoc :game updated)
     (m/edit-message! messaging
                      channel-id
-                     message
+                     message-id
                      :content (status-text updated)
                      :embed embed)))
 
 (defn- start-game! [game-tag messaging author channel-id init-game map-msg]
   (let [file  (game-image-file author)
         embed (get-img-embed messaging init-game file)]
-    (create-game! author game-tag {:game init-game :file file})
+    (create-game! author game-tag {:game init-game :file-path (.getPath file)})
     (->> @(m/create-message! messaging
                              channel-id
                              :content (status-text init-game)
                              :embed embed)
          (map-msg)
          (:id)
-         (update-game-state! author game-tag assoc :message))))
+         (update-game-state! author game-tag assoc :message-id))))
 
 (defn- start-or-update! [game-tag messaging author channel-id msg-content start-fn]
   (let [input (command-arg-text msg-content)]
