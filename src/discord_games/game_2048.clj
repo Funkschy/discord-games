@@ -15,10 +15,17 @@
        (mapcat (partial partition-all 2)) ;; only sum 2 numbers [1 1 1 1] should be [2 2], not [4]
        (map (partial apply +))))
 
+(defn- reverse-if [condition coll]
+  (if condition
+    (reverse coll)
+    coll))
+
 (defn- swipe-line [pad-front? line]
   (->> line
        (filter (comp not zero?))
+       (reverse-if pad-front?)
        (merge-adjacent)
+       (reverse-if pad-front?)
        (pad-4 pad-front?)))
 
 (defn- swipe-lines [pad-front? lines]
