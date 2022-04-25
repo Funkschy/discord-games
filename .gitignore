@@ -6,3 +6,4 @@ tmp/
 .lsp
 .nrepl-port
 target
+/.lein-failures
