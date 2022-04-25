@@ -49,7 +49,7 @@
    :up   [false swap-lines-cols]
    :down [true swap-lines-cols]})
 
-(defn- shift [game-state direction]
+(defn shift [game-state direction]
   (let [[pad-front? mapper] (directions direction)
         board (:board game-state)
         lines (partition 4 board)]

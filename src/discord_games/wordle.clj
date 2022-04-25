@@ -30,7 +30,7 @@
         (update 1 conj (if (and (budget c) (> (budget c) 0)) :in-word :miss)))
     (update acc 1 conj status)))
 
-(defn- calculate-hits [actual guess]
+(defn calculate-hits [actual guess]
   (let [hits          (map (partial check-hit (set actual)) actual guess)
         yellow-budget (merge-with - (frequencies actual) (freq-of hits guess :correct))]
     (->> (map vector hits guess)
