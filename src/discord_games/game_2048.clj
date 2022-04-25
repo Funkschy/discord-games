@@ -74,7 +74,19 @@
 (defn- log2 [x]
   (int (/ (Math/log x) (Math/log 2))))
 
-(def color-scheme ["#eb9661" "#de9f47" "#b55945" "#819447" "#44702d" "#2f4d2f" "#6c81a1" "#405273" "#14233a"])
+(def color-scheme
+  ["#de9e41"
+   "#be772b"
+   "#cf573c"
+   "#a53030"
+   "#a8ca58"
+   "#75a743"
+   "#468232"
+   "#25562e"
+   "#73bed3"
+   "#4f8fba"
+   "#3c5e8b"
+   "#253a5e"])
 
 (defn- bg-color [value]
   (if (zero? value)
