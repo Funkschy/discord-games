@@ -3,35 +3,20 @@
    [clojure.string :as str]
    [discljord.messaging :as m]
    [discord-games.config :refer [config]]
+   [discord-games.game :refer [status-text update-state]]
    [discord-games.game-2048 :as g2048]
    [discord-games.render :as r]
    [discord-games.state :refer [create-game! create-reactable-message!
                                 has-running-game? message-game quit-game!
                                 running-game update-game-state!]]
-   [discord-games.wordle :as wordle])
+   [discord-games.wordle :as wordle]
+   [discord-games.tictactoe :as tictactoe]
+   [clojure.set :as s])
   (:import
-   [discord_games.game_2048 Game2048]
-   [discord_games.wordle Wordle]
    [java.io File]))
 
 (def command-prefix (get-in config [:commands :prefix]))
 (def img-channel (get-in config [:discord-constants :img-channel]))
-
-(defprotocol Game
-  (update-state [game input])
-  (status-text  [game]))
-
-(extend-protocol Game
-  Wordle
-  (update-state [game guess]
-    (wordle/make-guess game guess))
-  (status-text [game]
-    (wordle/status-text game))
-  Game2048
-  (update-state [game direction]
-    (g2048/move game direction))
-  (status-text [game]
-    (g2048/status-text game)))
 
 (defn command-name [msg-content]
   (when (str/starts-with? msg-content command-prefix)
@@ -97,10 +82,17 @@
       (update-game! game-tag messaging author channel-id input)
       (start-fn messaging author channel-id input))))
 
+(defn- init-reactions! [game-tag messaging channel-id author emotes {id :id :as message}]
+  (doseq [emote emotes]
+    (m/create-reaction! messaging channel-id id emote))
+  (create-reactable-message! author id game-tag)
+  message)
+
 ;; --- wordle ---
 
 (defn- start-wordle-game! [messaging author channel-id guess]
-  (let [init-game (wordle/make-guess (wordle/new-game) guess)]
+  (let [init-game (update-state (wordle/new-game) guess)]
+    (prn init-game)
     (start-game! :wordle messaging author channel-id init-game identity)))
 
 (defmethod execute! "wordle" [{:keys [messaging]} {:keys [author channel-id]} msg-content]
@@ -108,29 +100,55 @@
 
 ;; --- 2048 ---
 
-(defn- init-2048-reactions! [messaging channel-id author {id :id :as message}]
-  (doseq [emote (keys (get-in config [:discord-constants :arrow-emotes]))]
-    (m/create-reaction! messaging channel-id id emote))
-  (create-reactable-message! author id :2048)
-  message)
+(def ^:private dir->emote-2048 (select-keys (get-in config [:discord-constants :arrow-emotes])
+                                            ["left" "right" "up" "down"]))
+
+(def ^:private emote->dir-2048 (s/map-invert dir->emote-2048))
 
 (defn- start-2048-game! [messaging author channel-id _]
   (let [init-game (g2048/new-game)
-        map-msg   (partial init-2048-reactions! messaging channel-id author)]
+        emotes    (keys emote->dir-2048)
+        map-msg   (partial init-reactions! :2048 messaging channel-id author emotes)]
     (start-game! :2048 messaging author channel-id init-game map-msg)))
 
 (defmethod execute! "2048" [{:keys [messaging]} {:keys [author channel-id]} msg-content]
   (start-or-update! :2048 messaging author channel-id msg-content start-2048-game!))
 
 (defmethod react! :2048 [{:keys [messaging]} {:keys [author channel-id]} emote message-id]
-  (when-let [dir (get-in config [:discord-constants :arrow-emotes emote])]
+  (when-let [dir (emote->dir-2048 emote)]
     (update-game! :2048 messaging author channel-id dir)
+    (m/delete-user-reaction! messaging channel-id message-id emote author)))
+
+;; --- tic tac toe ---
+
+(def ^:private tic-tac-toe-emote-order
+  ["upper-left" "up" "upper-right" "left" "center" "right" "lower-left" "down" "lower-right"])
+(def ^:private dir->emote-tictactoe (get-in config [:discord-constants :arrow-emotes]))
+(def ^:private emote->dir-tictactoe (s/map-invert dir->emote-tictactoe))
+
+(defn- start-tic-tac-toe-game! [messaging author channel-id _]
+  (let [init-game (tictactoe/new-game)
+        emotes    (map dir->emote-tictactoe tic-tac-toe-emote-order)
+        map-msg   (partial init-reactions! :tictactoe messaging channel-id author emotes)]
+    (start-game! :tictactoe messaging author channel-id init-game map-msg)))
+
+(defmethod execute! "tictactoe" [{:keys [messaging]} {:keys [author channel-id]} msg-content]
+  (start-or-update! :tictactoe messaging author channel-id msg-content start-tic-tac-toe-game!))
+
+(def ^:private dir->index
+  (->> tic-tac-toe-emote-order
+       (map-indexed #(vector %2 (str %1)))
+       (into {})))
+
+(defmethod react! :tictactoe [{:keys [messaging]} {:keys [author channel-id]} emote message-id]
+  (when-let [index   (-> emote emote->dir-tictactoe dir->index)]
+    (update-game! :tictactoe messaging author channel-id index)
     (m/delete-user-reaction! messaging channel-id message-id emote author)))
 
 ;; --- general ---
 
 (defmethod execute! "quit" [{:keys [messaging]} {:keys [author channel-id]} msg-content]
-  (let [games {"wordle" :wordle "2048" :2048}
+  (let [games {"wordle" :wordle "2048" :2048 "tictactoe" :tictactoe}
         game  (command-arg-text msg-content)]
     (if (games game)
       (do (quit-game! author (games game))

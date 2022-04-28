@@ -4,7 +4,12 @@
  :discord-constants
  {:img-channel 964619087332401244
   :arrow-emotes
-  {"⬅" "left"
-   "➡" "right"
-   "⬆"  "up"
-   "⬇" "down"}}}
+  {"left" "⬅"
+   "right" "➡"
+   "up" "⬆"
+   "down" "⬇"
+   "upper-left" "↖"
+   "upper-right" "↗"
+   "lower-left" "↙"
+   "lower-right" "↘"
+   "center" "⏹"}}}

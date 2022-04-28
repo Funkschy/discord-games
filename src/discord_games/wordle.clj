@@ -3,7 +3,8 @@
    [clojure.java.io :refer [resource]]
    [clojure.set :as sets]
    [clojure.string :as str]
-   [discord-games.render :refer [draw-letter! TextTileGame]]))
+   [discord-games.render :refer [draw-letter! TextTileGame]]
+   [discord-games.game :refer [Game ok error]]))
 
 (defn- read-word-set [init-coll filename]
   (into init-coll (str/split-lines (slurp (resource filename)))))
@@ -44,11 +45,6 @@
         status (if won? :won :playing)]
     (assoc state :status status)))
 
-(defn- error [game-state message]
-  (-> game-state
-      (assoc :status :error)
-      (assoc :message message)))
-
 (defn- tries [{tries :tries}]
   (count tries))
 
@@ -62,11 +58,41 @@
         (assoc :message (str "The word was " (:actual game-state))))
     game-state))
 
+(defn- won? [{status :status}]
+  (= status :won))
+
+(defn- lost? [{status :status}]
+  (= status :lost))
+
+(defn- valid? [word]
+  (contains? guessable-words word))
+
 ;; -- API --
 
 (def letter-size 128)
 
-(defrecord Wordle [actual]
+(defrecord Wordle [actual])
+
+(defn new-game []
+  (Wordle. (rand-nth possible-solution-words)))
+
+(extend-type Wordle
+  Game
+  (update-state [game-state guess]
+    (let [guess (str/lower-case guess)]
+      (cond
+        (won? game-state)        game-state
+        (lost? game-state)       game-state
+        (> (tries game-state) 5) (error game-state "Game is already lost")
+        (valid? guess)           (check-lost (update-with-guess (ok game-state) guess))
+        :else (error game-state (str guess " is not a valid word")))))
+  (status-text [game-state]
+    (case (:status game-state)
+      :won   "Congratulations"
+      :error (:message game-state)
+      :lost  (:message game-state)
+      (str (tries-left game-state) " tries left")))
+
   TextTileGame
   (draw-game! [game-state g w h]
     (let [colors      {:miss "#3a3a3c" :in-word "#b59f3b" :correct "#538d4e"}
@@ -81,31 +107,3 @@
           (recur tail (long (+ y letter-size)))))))
   (dims [_]
     [(* 5 letter-size) (* 6 letter-size) letter-size]))
-
-(defn new-game []
-  (Wordle. (rand-nth possible-solution-words)))
-
-(defn won? [{status :status}]
-  (= status :won))
-
-(defn lost? [{status :status}]
-  (= status :lost))
-
-(defn valid? [word]
-  (contains? guessable-words word))
-
-(defn make-guess [game-state guess]
-  (let [guess (str/lower-case guess)]
-    (cond
-      (won? game-state)        game-state
-      (lost? game-state)       game-state
-      (> (tries game-state) 5) (error game-state "Game is already lost")
-      (valid? guess)           (check-lost (update-with-guess game-state guess))
-      :else (error game-state (str guess " is not a valid word")))))
-
-(defn status-text [game-state]
-  (case (:status game-state)
-    :won   "Congratulations"
-    :error (:message game-state)
-    :lost  (:message game-state)
-    (str (tries-left game-state) " tries left")))

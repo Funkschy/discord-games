@@ -1,6 +1,7 @@
 (ns discord-games.game-2048
   (:require
-   [discord-games.render :refer [TextTileGame draw-text!]]))
+   [discord-games.render :refer [TextTileGame draw-text!]]
+   [discord-games.game :refer [error ok Game]]))
 
 (defn- pad-n [n pad-front? coll]
   (if pad-front?
@@ -61,16 +62,6 @@
          (vec)
          (assoc game-state :board))))
 
-(defn- error [game-state message]
-  (-> game-state
-      (assoc :status :error)
-      (assoc :message message)))
-
-(defn- ok [game-state]
-  (if (= (:status game-state) :error)
-    (dissoc game-state :status :message)
-    game-state))
-
 (defn- log2 [x]
   (int (/ (Math/log x) (Math/log 2))))
 
@@ -97,27 +88,7 @@
 
 (def tile-size 128)
 
-(defrecord Game2048 [board]
-  TextTileGame
-  (draw-game! [_ g w h]
-    (let [text-color "#d7dadc"
-          tile-size  (/ w 4)]
-      (assert (= w h) "invalid image size")
-      (loop [[line & tail] (partition 4 board), y 0]
-        (doseq [[offset value] (map vector (range) line)]
-          (draw-text! g
-                      (* offset tile-size)
-                      y
-                      tile-size
-                      tile-size
-                      (str value)
-                      text-color
-                      (bg-color value)))
-        (when tail
-          (recur tail (long (+ y tile-size)))))))
-
-  (dims [_]
-    [(* 4 tile-size) (* 4 tile-size) (/ tile-size 2)]))
+(defrecord Game2048 [board])
 
 (defn lost? [game-state]
   (or (:lost game-state)
@@ -140,18 +111,40 @@
    "up" :up, "u" :up
    "down" :down, "d" :down})
 
-(defn move [game-state direction-str]
-  (let [direction (direction-strings direction-str)]
-    (cond
-      (nil? direction) (error game-state (str "Invalid direction: " direction-str))
-      (not (valid-move? game-state direction)) (error game-state "Invalid move")
-      :else (ok (make-move game-state direction)))))
-
 (defn new-game []
   (spawn-random (Game2048. (vec (repeat 16 0)))))
 
-(defn status-text [game-state]
-  (case (:status game-state)
-    :error (:message game-state)
-    :lost  (:message game-state)
-    "2048"))
+(extend-type Game2048
+  Game
+  (update-state [game-state direction-str]
+    (let [direction (direction-strings direction-str)]
+      (cond
+        (nil? direction) (error game-state (str "Invalid direction: " direction-str))
+        (not (valid-move? game-state direction)) (error game-state "Invalid move")
+        :else (ok (make-move game-state direction)))))
+  (status-text [game-state]
+    (case (:status game-state)
+      :error (:message game-state)
+      :lost  (:message game-state)
+      "2048"))
+
+  TextTileGame
+  (draw-game! [{board :board} g w h]
+    (let [text-color "#d7dadc"
+          tile-size  (/ w 4)]
+      (assert (= w h) "invalid image size")
+      (loop [[line & tail] (partition 4 board), y 0]
+        (doseq [[offset value] (map vector (range) line)]
+          (draw-text! g
+                      (* offset tile-size)
+                      y
+                      tile-size
+                      tile-size
+                      (str value)
+                      text-color
+                      (bg-color value)))
+        (when tail
+          (recur tail (long (+ y tile-size)))))))
+
+  (dims [_]
+    [(* 4 tile-size) (* 4 tile-size) (/ tile-size 2)]))

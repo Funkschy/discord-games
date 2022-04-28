@@ -4,6 +4,7 @@ A discord bot to play interactive games.
 It currently supports the following games:
  - Wordle
  - 2048
+ - Tic Tac Toe (noughts and crosses)
 
 ## Usage
 
@@ -19,7 +20,14 @@ The prefix for commands can be changed in the config.edn, it's `$` by default
 The bot currently has the following commands:
  - $2048 will start a new 2048 game
  - $wordle \<guess\> will start a new wordle game
+ - $tictactoe will start a new tic tac toe game
  - $quit \<game\> will quit your current session for \<game\>
+ 
+## Screenshots
+
+![2048](screenshots/2048.png)
+![Wordle](screenshots/wordle.png)
+![TicTacToe](screenshots/tictactoe.png)
 
 ## License
 
