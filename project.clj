@@ -5,6 +5,7 @@
   :dependencies [[org.clojure/clojure "1.11.1"]
                  [org.clojure/tools.logging "1.2.4"]
                  [org.clojure/core.async "1.5.648"]
+                 [org.xerial/sqlite-jdbc "3.36.0"]
                  [org.suskalo/discljord "1.3.0"
                   :exclusions [org.clojure/clojure
                                org.clojure/tools.logging
@@ -12,5 +13,6 @@
   :main ^:skip-aot discord-games.core
   :global-vars {*warn-on-reflection* true}
   :target-path "target/%s"
+  :jvm-opts ["-Dclojure.tools.logging.factory=discord-games.logging/logger-factory"]
   :profiles {:uberjar {:aot :all
                        :jvm-opts ["-Dclojure.compiler.direct-linking=true"]}})

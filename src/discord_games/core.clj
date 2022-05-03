@@ -19,21 +19,27 @@
   [_ _ state]
   state)
 
+(defn context [author-id channel-id guild-id]
+  ;; discord snowflakes are guaranteed to be 64 bit integers
+  {:author (parse-long author-id)
+   :channel-id (parse-long channel-id)
+   :guild-id (parse-long guild-id)})
+
 (defmethod handle-event :message-create
-  [_ {{:keys [bot id]} :author :keys [channel-id content]} state]
+  [_ {{:keys [bot id]} :author :keys [channel-id guild-id content]} state]
   (if (= content (str command-prefix "disconnect"))
     (do (c/disconnect-bot! (:connection state))
         (assoc state :disconnected true))
     (do (when-not bot
-          (execute! state {:author id :channel-id channel-id} content))
+          (execute! state (context id channel-id guild-id) content))
         state)))
 
 (defmethod handle-event :message-reaction-add
-  [_ {:keys [message-id channel-id] :as event-data} state]
+  [_ {:keys [message-id channel-id guild-id] :as event-data} state]
   (let [{:keys [id bot]} (get-in event-data [:member :user])
         emote   (get-in event-data [:emoji :name])]
     (when-not bot
-      (react! state {:author id :channel-id channel-id} emote message-id))))
+      (react! state (context id channel-id guild-id) emote (parse-long message-id)))))
 
 (defn -main  []
   (let [event-ch (a/chan 100)

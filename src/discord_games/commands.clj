@@ -8,7 +8,7 @@
    [discord-games.render :as r]
    [discord-games.state :refer [create-game! create-reactable-message!
                                 has-running-game? message-game quit-game!
-                                running-game update-game-state!]]
+                                update-game-state! running-game-state add-participants!]]
    [discord-games.wordle :as wordle]
    [discord-games.tictactoe :as tictactoe]
    [clojure.set :as s])
@@ -36,8 +36,8 @@
     (command-name msg-content)))
 
 (defmulti react!
-  (fn [state context emote message-id]
-    (message-game (:author context) message-id)))
+  (fn [state {:keys [author channel-id]} emote message-id]
+    (message-game author channel-id message-id)))
 
 (defn- ^File game-image-file [username]
   (File/createTempFile (str username "_game") ".png"))
@@ -52,51 +52,55 @@
         url (get-in @msg [:attachments 0 :url])]
     (assoc-in img-embed ["image" "url"] url)))
 
-(defn- update-game! [game-tag messaging author channel-id input]
-  (let [{:keys [game message-id file-path]} (running-game author game-tag)
+(defn- update-game! [game-tag {:keys [messaging channel-id author]} input]
+  (let [{:keys [game file-path message-id]} (running-game-state game-tag author channel-id)
         file    (File. ^String file-path)
         updated (update-state game input)
         embed   (get-img-embed messaging updated file)]
-    (update-game-state! author game-tag assoc :game updated)
+    (update-game-state! game-tag author channel-id assoc :game updated)
     (m/edit-message! messaging
                      channel-id
                      message-id
                      :content (status-text updated)
                      :embed embed)))
 
-(defn- start-game! [game-tag messaging author channel-id init-game map-msg]
-  (let [file  (game-image-file author)
-        embed (get-img-embed messaging init-game file)]
-    (create-game! author game-tag {:game init-game :file-path (.getPath file)})
-    (->> @(m/create-message! messaging
-                             channel-id
-                             :content (status-text init-game)
-                             :embed embed)
-         (map-msg)
-         (:id)
-         (update-game-state! author game-tag assoc :message-id))))
+(defn- start-game!
+  ([game-tag env init-game map-msg]
+   (start-game! game-tag env init-game map-msg nil))
+  ([game-tag {:keys [channel-id messaging author]} init-game map-msg challengees]
+   (let [file  (game-image-file author)
+         embed (get-img-embed messaging init-game file)
+         msg   (m/create-message! messaging
+                                  channel-id
+                                  :content (status-text init-game)
+                                  :embed embed)]
+     (create-game! game-tag author channel-id {:game init-game :file-path (.getPath file)})
+     (add-participants! game-tag author channel-id challengees)
+     (->> @msg
+          (map-msg)
+          (:id)
+          (update-game-state! game-tag author channel-id assoc :message-id)))))
 
-(defn- start-or-update! [game-tag messaging author channel-id msg-content start-fn]
+(defn- start-or-update! [game-tag {:keys [author channel-id] :as env} msg-content start-fn]
   (let [input (command-arg-text msg-content)]
-    (if (has-running-game? author game-tag)
-      (update-game! game-tag messaging author channel-id input)
-      (start-fn messaging author channel-id input))))
+    (if (has-running-game? game-tag author channel-id)
+      (update-game! game-tag env input)
+      (start-fn env input))))
 
-(defn- init-reactions! [game-tag messaging channel-id author emotes {id :id :as message}]
+(defn- init-reactions! [game-tag {:keys [messaging channel-id author]} emotes {id :id :as message}]
   (doseq [emote emotes]
     (m/create-reaction! messaging channel-id id emote))
-  (create-reactable-message! author id game-tag)
+  (create-reactable-message! game-tag author channel-id (parse-long id))
   message)
 
 ;; --- wordle ---
 
-(defn- start-wordle-game! [messaging author channel-id guess]
+(defn- start-wordle-game! [env guess]
   (let [init-game (update-state (wordle/new-game) guess)]
-    (prn init-game)
-    (start-game! :wordle messaging author channel-id init-game identity)))
+    (start-game! "wordle" env init-game identity)))
 
-(defmethod execute! "wordle" [{:keys [messaging]} {:keys [author channel-id]} msg-content]
-  (start-or-update! :wordle messaging author channel-id msg-content start-wordle-game!))
+(defmethod execute! "wordle" [state context msg-content]
+  (start-or-update! "wordle" (merge state context) msg-content start-wordle-game!))
 
 ;; --- 2048 ---
 
@@ -105,18 +109,18 @@
 
 (def ^:private emote->dir-2048 (s/map-invert dir->emote-2048))
 
-(defn- start-2048-game! [messaging author channel-id _]
+(defn- start-2048-game! [env _]
   (let [init-game (g2048/new-game)
         emotes    (keys emote->dir-2048)
-        map-msg   (partial init-reactions! :2048 messaging channel-id author emotes)]
-    (start-game! :2048 messaging author channel-id init-game map-msg)))
+        map-msg   (partial init-reactions! "2048" env emotes)]
+    (start-game! "2048" env init-game map-msg)))
 
-(defmethod execute! "2048" [{:keys [messaging]} {:keys [author channel-id]} msg-content]
-  (start-or-update! :2048 messaging author channel-id msg-content start-2048-game!))
+(defmethod execute! "2048" [state context msg-content]
+  (start-or-update! "2048" (merge state context) msg-content start-2048-game!))
 
-(defmethod react! :2048 [{:keys [messaging]} {:keys [author channel-id]} emote message-id]
+(defmethod react! "2048" [{:keys [messaging] :as state} {:keys [channel-id author] :as context} emote message-id]
   (when-let [dir (emote->dir-2048 emote)]
-    (update-game! :2048 messaging author channel-id dir)
+    (update-game! "2048" (merge state context) dir)
     (m/delete-user-reaction! messaging channel-id message-id emote author)))
 
 ;; --- tic tac toe ---
@@ -126,32 +130,34 @@
 (def ^:private dir->emote-tictactoe (get-in config [:discord-constants :arrow-emotes]))
 (def ^:private emote->dir-tictactoe (s/map-invert dir->emote-tictactoe))
 
-(defn- start-tic-tac-toe-game! [messaging author channel-id _]
-  (let [init-game (tictactoe/new-game)
-        emotes    (map dir->emote-tictactoe tic-tac-toe-emote-order)
-        map-msg   (partial init-reactions! :tictactoe messaging channel-id author emotes)]
-    (start-game! :tictactoe messaging author channel-id init-game map-msg)))
+(defn- start-tic-tac-toe-game! [{:keys [messaging guild-id] :as env} challenged-username]
+  (when-let [challenged-user (first @(m/search-guild-members! messaging guild-id challenged-username))]
+    (let [init-game  (tictactoe/new-game)
+          emotes     (map dir->emote-tictactoe tic-tac-toe-emote-order)
+          map-msg    (partial init-reactions! "tictactoe" env emotes)
+          challengee (get-in challenged-user [:user :id])]
+      (start-game! "tictactoe" env init-game map-msg [challengee]))))
 
-(defmethod execute! "tictactoe" [{:keys [messaging]} {:keys [author channel-id]} msg-content]
-  (start-or-update! :tictactoe messaging author channel-id msg-content start-tic-tac-toe-game!))
+(defmethod execute! "tictactoe" [state context msg-content]
+  (start-or-update! "tictactoe" (merge state context) msg-content start-tic-tac-toe-game!))
 
 (def ^:private dir->index
   (->> tic-tac-toe-emote-order
        (map-indexed #(vector %2 (str %1)))
        (into {})))
 
-(defmethod react! :tictactoe [{:keys [messaging]} {:keys [author channel-id]} emote message-id]
-  (when-let [index   (-> emote emote->dir-tictactoe dir->index)]
-    (update-game! :tictactoe messaging author channel-id index)
+(defmethod react! "tictactoe" [{:keys [messaging] :as state} {:keys [channel-id author] :as context} emote message-id]
+  (when-let [index (-> emote emote->dir-tictactoe dir->index)]
+    (update-game! "tictactoe" (merge state context) index)
     (m/delete-user-reaction! messaging channel-id message-id emote author)))
 
 ;; --- general ---
 
 (defmethod execute! "quit" [{:keys [messaging]} {:keys [author channel-id]} msg-content]
-  (let [games {"wordle" :wordle "2048" :2048 "tictactoe" :tictactoe}
+  (let [games #{"wordle" "2048" "tictactoe"}
         game  (command-arg-text msg-content)]
     (if (games game)
-      (do (quit-game! author (games game))
+      (do (quit-game! game author  channel-id)
           (m/create-message! messaging channel-id :content (str "Quitting " game)))
       (m/create-message! messaging channel-id :content (str "No game called " game)))))
 

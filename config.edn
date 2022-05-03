@@ -1,4 +1,5 @@
-{:log {}
+{:log
+ {:show-database-values true}
  :commands
  {:prefix "$"}
  :discord-constants
