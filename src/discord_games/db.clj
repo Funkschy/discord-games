@@ -4,7 +4,7 @@
    [discord-games.config :refer [config]]
    [clojure.string :as str])
   (:import
-   [java.sql DriverManager PreparedStatement Connection]))
+   [java.sql DriverManager PreparedStatement Connection SQLException]))
 
 (def connection
   (delay
@@ -14,6 +14,16 @@
      (.setQueryTimeout s 30)
      (.executeUpdate s (slurp "init.sql"))
      c)))
+
+(defmacro dotransaction [& exprs]
+  `(let [^Connection c# @connection]
+     (try
+       (.setAutoCommit c# false)
+       ~@exprs
+       (.commit c#)
+       (catch SQLException ~'e
+         (log/error "could not commit transaction" ~'e)
+         (.rollback c#)))))
 
 (defn disconnect! []
   (.close ^Connection @connection))
@@ -25,6 +35,9 @@
   java.lang.Long
   (set-value [value stmt idx]
     (.setLong ^PreparedStatement stmt idx value))
+  java.lang.Integer
+  (set-value [value stmt idx]
+    (.setInt ^PreparedStatement stmt idx value))
   java.lang.String
   (set-value [value stmt idx]
     (.setString ^PreparedStatement stmt idx value)))
@@ -47,4 +60,8 @@
   (exec statement args (fn [^PreparedStatement s] (resultset-seq (.executeQuery s)))))
 
 (defn exec-update [statement & args]
-  (exec statement args (fn [^PreparedStatement s] (.executeUpdate s))))
+  (exec statement
+        args
+        (fn [^PreparedStatement s]
+          (.executeUpdate s)
+          (resultset-seq (.getGeneratedKeys s)))))

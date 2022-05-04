@@ -1,32 +1,33 @@
 DROP TABLE IF EXISTS player;
 DROP TABLE IF EXISTS running_game;
-DROP TABLE IF EXISTS co_player;
-
-CREATE TABLE IF NOT EXISTS player (
-    id   INTEGER(8) PRIMARY KEY,
-    nick CHAR(255)
-);
+DROP TABLE IF EXISTS participant;
+DROP TABLE IF EXISTS message;
 
 CREATE TABLE IF NOT EXISTS running_game (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
     game_tag   CHAR(32),
-    channel_id INTEGER(8),
-    player_one INTEGER(8),
-
-    game_state TEXT,
-    message_id INTEGER(8),
-
-    FOREIGN KEY (player_one) REFERENCES player(id),
-    PRIMARY KEY (game_tag, channel_id, player_one)
+    game_state TEXT -- EDN blob
 );
 
 
-CREATE TABLE IF NOT EXISTS co_player (
-    game_tag   INTEGER(8),
-    channel_id INTEGER(8),
-    player_one INTEGER(8),
-    player     INTEGER(8),
+CREATE TABLE IF NOT EXISTS player (
+    id INTEGER(8) PRIMARY KEY
+);
 
-    FOREIGN KEY (player) REFERENCES player(id),
-    FOREIGN KEY (game_tag, channel_id, player_one) REFERENCES running_game(game_tag, channel_id, player_one ),
-    PRIMARY KEY (game_tag, channel_id, player_one, player)
+CREATE TABLE IF NOT EXISTS participant (
+    game_id   INTEGER,
+    player_id INTEGER(8),
+
+    owner BOOLEAN NOT NULL CHECK (owner IN (0, 1)),
+
+    FOREIGN KEY (game_id) REFERENCES running_game(id) ON DELETE CASCADE,
+    FOREIGN KEY (player_id) REFERENCES player(id) ON DELETE CASCADE,
+    PRIMARY KEY (game_id, player_id)
+);
+
+CREATE TABLE IF NOT EXISTS message (
+    id         INTEGER(8) PRIMARY KEY,
+    channel_id INTEGER(8),
+    game_id    INTEGER(8),
+    FOREIGN KEY (game_id) REFERENCES running_game(id) ON DELETE CASCADE
 );
